@@ -4,7 +4,7 @@ A Godot Editor Addon for .NET/C# projects that automates the creation of `MeshLi
 
 This tool is designed to streamline the workflow for creating levels with `GridMap`, allowing you to design your tileset directly in Blender and have it seamlessly imported into Godot as a ready-to-use `MeshLibrary`.
 
-![Example of generated MeshLibrary with previews](https://user-images.githubusercontent.com/5137390/236873096-724a25c3-6330-47e1-a0c1-3d772c68b6b2.png)
+![Example of generated MeshLibrary with previews](./Screens/godot-generated-meshlib.png)
 
 ## Features
 
@@ -34,9 +34,9 @@ For the addon to import `.blend` files, **you must have Blender installed** and 
    - Locate the `Import Script` (or `Custom Script`) property.
    - Assign the `BlendPostImport.cs` script to this field.
    - Click the **Reimport** button.
-   
+
    ![Godot Import Script Configuration](./Screens/godot-blend-import-script.png)
-   
+
 5. **Automatic Previews**: After reimporting, a `your_file_name.meshlib` resource will be generated alongside your source file. The plugin will then automatically generate clean, framed previews for all items in the library.
 6. **Use in GridMap**: Select your `GridMap` node and assign the newly created `.meshlib` file to its `Mesh Library` property.
 
