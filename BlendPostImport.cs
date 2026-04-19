@@ -6,6 +6,33 @@ using System.Collections.Generic;
 [GlobalClass]
 public partial class BlendPostImport : EditorScenePostImport
 {
+    private class ItemData
+    {
+        public string Name;
+        public Transform3D Transform;
+        public Mesh Mesh;
+        public Godot.Collections.Array Shapes;
+        public NavigationMesh NavMesh;
+        public Transform3D NavMeshTransform;
+    }
+
+    private static (NavigationMesh, Transform3D) FindNavigationMesh(Node node)
+    {
+        foreach (var child in node.GetChildren())
+        {
+            if (child is NavigationRegion3D nr)
+            {
+                return (nr.NavigationMesh, nr.Transform);
+            }
+            else if (child is Node3D)
+            {
+                var result = FindNavigationMesh(child);
+                if (result.Item1 != null) return result;
+            }
+        }
+        return (null, Transform3D.Identity);
+    }
+
     public override GodotObject _PostImport(Node sceneNode)
     {
         try
@@ -59,7 +86,9 @@ public partial class BlendPostImport : EditorScenePostImport
 
             var meshLibrary = new MeshLibrary();
             var children = sceneNode.GetChildren();
-            int idCounter = 0;
+
+            // Collect items first to allow reordering (ensuring ID 0 has a mesh)
+            var collectedItems = new List<ItemData>();
 
             foreach (var child in children)
             {
@@ -93,29 +122,67 @@ public partial class BlendPostImport : EditorScenePostImport
                     continue;
                 }
 
+                // Check for NaN/Infinite transforms which can cause "instance is null" errors in the renderer
+                if (!node3d.Transform.Origin.IsFinite() ||
+                    !node3d.Transform.Basis.Column0.IsFinite() ||
+                    !node3d.Transform.Basis.Column1.IsFinite() ||
+                    !node3d.Transform.Basis.Column2.IsFinite())
+                {
+                    GD.PrintErr($"[BlendPostImport] Error: Item '{node3d.Name}' has a non-finite (NaN/Inf) transform. Resetting to Identity.");
+                    node3d.Transform = Transform3D.Identity;
+                }
+
+                var itemData = new ItemData
+                {
+                    Name = node3d.Name,
+                    Transform = node3d.Transform,
+                    Shapes = shapes,
+                    NavMesh = navMesh,
+                    NavMeshTransform = navXform
+                };
+
+                if (meshInstance != null && meshInstance.Mesh != null)
+                {
+                    if (meshInstance.Mesh.GetSurfaceCount() > 0)
+                        itemData.Mesh = meshInstance.Mesh;
+                    else
+                        GD.Print($"[BlendPostImport] Warning: Item '{node3d.Name}' has a mesh with 0 surfaces.");
+                }
+
+                collectedItems.Add(itemData);
+            }
+
+            // Ensure ID 0 has a mesh to prevent "instance is null" errors in GridMap
+            int validMeshIndex = collectedItems.FindIndex(i => i.Mesh != null);
+            if (validMeshIndex == -1 && collectedItems.Count > 0)
+            {
+                GD.PrintErr("[BlendPostImport] Warning: No items with valid meshes found in this library. GridMap cursor may cause errors.");
+            }
+            else if (validMeshIndex > 0)
+            {
+                GD.Print($"[BlendPostImport] Reordering: Swapping '{collectedItems[0].Name}' with '{collectedItems[validMeshIndex].Name}' to ensure ID 0 has a mesh.");
+                var temp = collectedItems[0];
+                collectedItems[0] = collectedItems[validMeshIndex];
+                collectedItems[validMeshIndex] = temp;
+            }
+
+            // Write items to library
+            int idCounter = 0;
+            foreach (var item in collectedItems)
+            {
                 meshLibrary.CreateItem(idCounter);
-                meshLibrary.SetItemName(idCounter, node3d.Name);
-                meshLibrary.SetItemMeshTransform(idCounter, node3d.Transform);
-
-                if (meshInstance != null)
+                meshLibrary.SetItemName(idCounter, item.Name);
+                meshLibrary.SetItemMeshTransform(idCounter, item.Transform);
+                if (item.Mesh != null) meshLibrary.SetItemMesh(idCounter, item.Mesh);
+                if (item.Shapes.Count > 0) meshLibrary.SetItemShapes(idCounter, item.Shapes);
+                if (item.NavMesh != null)
                 {
-                    meshLibrary.SetItemMesh(idCounter, meshInstance.Mesh);
-                }
-
-                if (shapes.Count > 0)
-                {
-                    meshLibrary.SetItemShapes(idCounter, shapes);
-                }
-
-                if (navMesh != null)
-                {
-                    meshLibrary.SetItemNavigationMesh(idCounter, navMesh);
-                    meshLibrary.SetItemNavigationMeshTransform(idCounter, navXform);
+                    meshLibrary.SetItemNavigationMesh(idCounter, item.NavMesh);
+                    meshLibrary.SetItemNavigationMeshTransform(idCounter, item.NavMeshTransform);
                 }
 
                 // Transfer preview from existing library if available
-                string itemName = node3d.Name;
-                if (existingPreviews.TryGetValue(itemName, out var existingPreview))
+                if (existingPreviews.TryGetValue(item.Name, out var existingPreview))
                 {
                     meshLibrary.SetItemPreview(idCounter, existingPreview);
                 }
@@ -150,7 +217,7 @@ public partial class BlendPostImport : EditorScenePostImport
         return sceneNode;
     }
 
-    private void FindCollisionShapes(Node node, Godot.Collections.Array shapes, Transform3D parentXform)
+    private static void FindCollisionShapes(Node node, Godot.Collections.Array shapes, Transform3D parentXform)
     {
         foreach (var child in node.GetChildren())
         {
@@ -173,23 +240,6 @@ public partial class BlendPostImport : EditorScenePostImport
                 FindCollisionShapes(child, shapes, currentXform);
             }
         }
-    }
-
-    private (NavigationMesh, Transform3D) FindNavigationMesh(Node node)
-    {
-        foreach (var child in node.GetChildren())
-        {
-            if (child is NavigationRegion3D nr)
-            {
-                return (nr.NavigationMesh, nr.Transform);
-            }
-            else if (child is Node3D)
-            {
-                var result = FindNavigationMesh(child);
-                if (result.Item1 != null) return result;
-            }
-        }
-        return (null, Transform3D.Identity);
     }
 }
 #endif

@@ -23,9 +23,13 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
     private DirectionalLight3D _previewFillLight;
     private int _currentPreviewItemId = -1;
     private int _frameWaitCount = 0;
+    private bool _isFileSystemSubscribed = false;
+    private Callable reimportedCallable;
 
     public override void _EnterTree()
     {
+
+        if (!Engine.IsEditorHint()) return;
         // Register project setting
         if (!ProjectSettings.HasSetting(SETTING_OVERWRITE_PREVIEWS))
         {
@@ -33,21 +37,84 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
             ProjectSettings.SetInitialValue(SETTING_OVERWRITE_PREVIEWS, true);
         }
 
+        var singleton = EditorInterface.Singleton;
+        if (singleton != null)
+        {
+            var fileSystem = singleton.GetResourceFilesystem();
+            if (fileSystem != null)
+            {
+                if (!_isFileSystemSubscribed)
+                {
+                    reimportedCallable = new Callable(this, MethodName.OnResourcesReimported);
+                    GD.Print("[BlendToMeshLibraryPlugin] Connecting to ResourcesReimported signal in _EnterTree");
+                    fileSystem.Connect(EditorFileSystem.SignalName.ResourcesReimported, reimportedCallable);
+                    _isFileSystemSubscribed = true;
+                }
+            }
+        }
+    }
+
+    public override void _Ready()
+    {
+
+        if (!Engine.IsEditorHint()) return;
+        base._Ready();
+
         // Connect to reimport signal
-        var fileSystem = EditorInterface.Singleton.GetResourceFilesystem();
-        fileSystem.ResourcesReimported += OnResourcesReimported;
+        var singleton = EditorInterface.Singleton;
+        if (singleton != null)
+        {
+            var fileSystem = singleton.GetResourceFilesystem();
+            if (fileSystem != null)
+            {
+                if (!_isFileSystemSubscribed)
+                {
+                    reimportedCallable = new Callable(this, MethodName.OnResourcesReimported);
+                    GD.Print("[BlendToMeshLibraryPlugin] Connecting to ResourcesReimported signal in _Ready");
+                    fileSystem.Connect(EditorFileSystem.SignalName.ResourcesReimported, reimportedCallable);
+                    _isFileSystemSubscribed = true;
+                }
+            }
+        }
+
+        GD.Print("[BlendToMeshLibraryPlugin] _Ready execution completed.");
     }
 
     public override void _ExitTree()
     {
-        var fileSystem = EditorInterface.Singleton.GetResourceFilesystem();
-        fileSystem.ResourcesReimported -= OnResourcesReimported;
+        if (!Engine.IsEditorHint()) return;
+        GD.Print("[BlendToMeshLibraryPlugin] Exiting tree, performing cleanup.");
+        Cleanup();
+    }
+
+    private void Cleanup()
+    {
+        try
+        {
+            var singleton = EditorInterface.Singleton;
+            if (singleton != null)
+            {
+                var fileSystem = singleton.GetResourceFilesystem();
+                if (fileSystem != null && _isFileSystemSubscribed)
+                {
+                    if (fileSystem.IsConnected(EditorFileSystem.SignalName.ResourcesReimported, reimportedCallable))
+                    {
+                        GD.Print("[BlendToMeshLibraryPlugin] Disconnecting from ResourcesReimported signal in Cleanup");
+                        fileSystem.Disconnect(EditorFileSystem.SignalName.ResourcesReimported, reimportedCallable);
+                    }
+                }
+            }
+        }
+        catch (Exception ex) { GD.Print($"[BlendToMeshLibraryPlugin] Error disconnecting in Cleanup: {ex.Message}"); }
+        _isFileSystemSubscribed = false;
+        reimportedCallable = default;
         StopPreviewGeneration();
     }
 
     private void OnResourcesReimported(string[] resources)
     {
         // Prevent overlapping generation
+        GD.Print($"[BlendToMeshLibraryPlugin] OnResourcesReimported called with {resources.Length} resources.");
         if (_isGeneratingPreviews) return;
 
         foreach (var path in resources)
@@ -73,6 +140,7 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
 
     private void GeneratePreviewsForLibrary(string path)
     {
+        GD.Print($"[BlendToMeshLibraryPlugin] GeneratePreviewsForLibrary called for: {path}");
         var library = ResourceLoader.Load<MeshLibrary>(path, cacheMode: ResourceLoader.CacheMode.Replace);
         if (library == null) return;
 
@@ -95,7 +163,7 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
         if (_previewItemQueue.Count > 0)
         {
             _isGeneratingPreviews = true;
-            // Block signals to prevent the editor (and other plugins like ExtendedGridMap) 
+            // Block signals to prevent the editor (and other plugins) 
             // from reacting to every single item update. This significantly improves performance 
             // and prevents log spam during batch generation.
             _targetMeshLibrary.SetBlockSignals(true);
@@ -145,6 +213,7 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
     {
         if (_previewViewport != null) return;
 
+        GD.Print("[BlendToMeshLibraryPlugin] Setting up Preview Viewport");
         // Create a dedicated SubViewport for rendering previews off-screen.
         // This avoids interfering with the main editor view.
         _previewViewport = new SubViewport
@@ -152,7 +221,7 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
             Size = new Vector2I(PREVIEW_SIZE, PREVIEW_SIZE),
             TransparentBg = true,
             OwnWorld3D = true,
-            // We manually update via RenderTargetUpdateMode.Once to save performance
+            // We manually update via RenderTargetUpdateMode.Once in RenderPreviewForItem() to save performance
             RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled
         };
 
@@ -241,7 +310,7 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
     }
 
     // Projects the AABB corners onto the camera's view plane to determine the necessary orthographic size.
-    private float CalculateOrthographicSizeForAabb(Aabb aabb, Camera3D camera)
+    private static float CalculateOrthographicSizeForAabb(Aabb aabb, Camera3D camera)
     {
         var cameraTransform = camera.GlobalTransform;
         var cameraRight = cameraTransform.Basis.X.Normalized();
@@ -307,11 +376,12 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
 
     private void StopPreviewGeneration()
     {
+        GD.Print("[MeshLibraryPreviewPlugin] Stopping preview generation and performing cleanup.");
         if (_targetMeshLibrary != null)
         {
             // Re-enable signals so the editor detects the changes
             _targetMeshLibrary.SetBlockSignals(false);
-            // Emit a single changed signal to trigger updates (e.g. in ExtendedGridMap)
+            // Emit a single changed signal to trigger updates
             _targetMeshLibrary.EmitChanged();
         }
         _isGeneratingPreviews = false;
@@ -324,9 +394,15 @@ public partial class BlendToMeshLibraryPlugin : EditorPlugin
 
     private void CleanupPreviewViewport()
     {
+        GD.Print("[MeshLibraryPreviewPlugin] Cleaning up preview viewport.");
         if (_previewViewport != null)
         {
-            _previewViewport.QueueFree();
+            if (IsInstanceValid(_previewViewport))
+            {
+                if (_previewViewport.GetParent() == this)
+                    RemoveChild(_previewViewport);
+                _previewViewport.QueueFree();
+            }
             _previewViewport = null;
             _previewCamera = null;
             _previewMeshInstance = null;
