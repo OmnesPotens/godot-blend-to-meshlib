@@ -2,6 +2,8 @@
 
 <img src = "./blend_to_meshlib_logo.svg" width="400">
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/Y8Y4HQWXE)
+
 A Godot Editor Addon for .NET/C# projects that automates the creation of `MeshLibrary` resources from `.blend`, `.glb`, or `.gltf` files, complete with high-quality, automatic preview generation.
 
 This tool is designed to streamline the workflow for creating levels with `GridMap`, allowing you to design your tileset directly in Blender and have it seamlessly imported into Godot as a ready-to-use `MeshLibrary`.
