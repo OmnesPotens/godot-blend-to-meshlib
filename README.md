@@ -63,12 +63,12 @@ To ensure your `.blend` file is processed correctly, follow these guidelines. Th
 
 The addon leverages Godot's standard import suffixes. To add a collision shape to a mesh, create a separate mesh in Blender and add the `-col` suffix to its name.
 
-- **Example**: You have a visual mesh named `rock`. Create a second, lower-poly mesh that covers its shape and name it `rock-col`.
-- When imported, the `rock-col` mesh will be removed from view and a `StaticBody3D` with a `CollisionShape3D` will be generated for the `rock` item.
+- **Example**: You have a visual mesh named `rock`. Simply rename it `rock-col` OR create a second simplified mesh with a `-colonly` prefix.
+- When imported, the `rock-col` mesh will be imported and Godot will generate a `StaticBody3D` with a `CollisionShape3D` for the `rock` item.
+- When imported, the `rock-colonly` mesh will only be used as the `StaticBody3D` with a `CollisionShape3D`.
 
 ![Blender Collision Suffixes Example](./Screens/blender-col-example.png)
 
-- The original `rock-col` mesh will not be included as a visible item in the `MeshLibrary`.
 - You can use this for multiple items. A `wall-col` mesh will create collision for the `wall` mesh, and so on.
 
 ![Godot Scene with Collision Example](./Screens/godot-blend-scene-with-col.png)
