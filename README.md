@@ -23,6 +23,11 @@ This tool is designed to streamline the workflow for creating levels with `GridM
 
 For the addon to import `.blend` files, **you must have Blender installed** and tell Godot where to find it.
 
+#### Official Godot documentation:
+
+- [Import configuration](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/import_configuration.html)
+- [Available formats (importing .blend files directly)](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/available_formats.html#importing-blend-files-directly-within-godot)
+
 1. Open Godot's editor settings: `Editor` -> `Editor Settings`.
 2. Go to `Filesystem` -> `Import` -> `Blender`.
 3. Set the `Blender Path` to point to your Blender executable.
